@@ -1,7 +1,7 @@
-import { createClient } from './client.js';
+import { createClient, HttpError } from './client.js';
 
 const api = createClient({
-  baseURL: 'https://jsonplaceholder.typicode.com',
+  baseURL: 'https://httpbin.org',
   headers: {  },
   timeout: 8000,
 });
@@ -10,6 +10,21 @@ const api = createClient({
 //   .then(data => console.log(data))
 //   .catch(err => console.error(err));
 
-api.post('/posts', {post: 'The post', date: Date.now(), author: 'Tatiana'})
+// api.get('/status/404')
+//   .then(data => console.log(data))
+//   .catch(handleError);
+
+api.get('/status/500')
   .then(data => console.log(data))
-  .catch(err => console.error(err));
+  .catch(handleError);
+
+function handleError(err) {
+    if (err instanceof HttpError) {
+        if (err.isAbort)          console.log('Отменено или таймаут');
+        else if (err.isNetwork)   console.log('Нет сети');
+        else if (err.status >= 400 && err.status < 500)
+            console.log('Ошибка клиента:', err.status);
+        else
+            console.log('Ошибка сервера:', err.status);
+    }
+}
