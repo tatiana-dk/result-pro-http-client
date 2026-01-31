@@ -7,14 +7,31 @@ export function createClient(config = {}) {
     timeout,
   } = config;
 
+  // Вспомогательная функция: добавляет query-параметры к URL
+  function buildUrl(url, query = {}) {
+    if (!query || Object.keys(query).length === 0) return url;
+
+    const params = new URLSearchParams();
+    for (const [key, value] of Object.entries(query)) {
+      if (value !== undefined && value !== null) {
+        params.append(key, value);
+      }
+    }
+    const queryString = params.toString();
+    return queryString ? `${url}?${queryString}` : url;
+  }
+
   async function request(options) {
-    // 1. Собираем полный URL
+    // 1. Собираем URL + query
     let fullUrl = options.url;
+    if (options.query) {
+      fullUrl = buildUrl(fullUrl, options.query);
+    }
     if (!fullUrl.startsWith('http')) {
-      fullUrl = baseURL + (options.url.startsWith('/') ? '' : '/') + options.url;
+      fullUrl = baseURL + (fullUrl.startsWith('/') ? '' : '/') + fullUrl;
     }
 
-    // 2. Объединяем заголовки (частные имеют приоритет)
+    // 2. Объединяем заголовки
     const mergedHeaders = {
       'Content-Type': 'application/json',
       ...defaultHeaders,
@@ -27,41 +44,35 @@ export function createClient(config = {}) {
       if (mergedHeaders['Content-Type'] === 'application/json') {
         body = JSON.stringify(options.body);
       } else {
-        body = options.body; // FormData, Blob, строка и т.д.
+        body = options.body; // FormData, строка, Blob и т.д.
       }
     }
 
-    // 4. Настраиваем таймаут (если указан)
+    // 4. Таймаут
     const controller = new AbortController();
-    const signal = controller.signal;
     let timeoutId;
-
     const effectiveTimeout = options.timeout ?? timeout;
     if (effectiveTimeout) {
       timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
     }
 
     try {
-      // 5. Выполняем fetch
       const res = await fetch(fullUrl, {
         method: options.method || 'GET',
         headers: mergedHeaders,
         body,
-        signal,
+        signal: controller.signal,
       });
 
-      // 6. Проверяем статус
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} ${res.statusText}`);
       }
 
-      // 7. Парсим ответ в зависимости от типа
       const contentType = res.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
         return await res.json();
-      } else {
-        return await res.text(); // или .blob(), .arrayBuffer() — можно позже расширить
       }
+      return await res.text();
     } catch (err) {
       if (err.name === 'AbortError') {
         throw new Error('Request timeout or aborted');
@@ -75,19 +86,25 @@ export function createClient(config = {}) {
   return {
     request,
 
-    get: (url, opts = {}) =>
-      request({ method: 'GET', url, ...opts }),
+    // Короткие методы — основные действия
+    get(url, options = {}) {
+      return request({ method: 'GET', url, ...options });
+    },
 
-    post: (url, body, opts = {}) =>
-      request({ method: 'POST', url, body, ...opts }),
+    post(url, body, options = {}) {
+      return request({ method: 'POST', url, body, ...options });
+    },
 
-    put: (url, body, opts = {}) =>
-      request({ method: 'PUT', url, body, ...opts }),
+    put(url, body, options = {}) {
+      return request({ method: 'PUT', url, body, ...options });
+    },
 
-    patch: (url, body, opts = {}) =>
-      request({ method: 'PATCH', url, body, ...opts }),
+    patch(url, body, options = {}) {
+      return request({ method: 'PATCH', url, body, ...options });
+    },
 
-    del: (url, opts = {}) =>  // delete — зарезервированное слово, поэтому del
-      request({ method: 'DELETE', url, ...opts }),
+    del(url, options = {}) {  // delete — зарезервированное слово
+      return request({ method: 'DELETE', url, ...options });
+    },
   };
 }
