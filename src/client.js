@@ -7,6 +7,8 @@ export function createClient(config = {}) {
     baseURL = '',
     headers: defaultHeaders = {},
     timeout,
+    beforeRequest,
+    afterResponse
   } = config;
 
   // Вспомогательная функция: добавляет query-параметры к URL
@@ -24,6 +26,15 @@ export function createClient(config = {}) {
   }
 
   async function request(options) {
+    // 1. Копируем опции, чтобы не менять оригинал
+    let currentOptions = { ...options };
+
+    // 2. Хук ДО запроса
+    if (beforeRequest) {
+      currentOptions = await beforeRequest(currentOptions) || currentOptions;
+      // можно вернуть новые опции или ничего (тогда берём как есть)
+    }
+
     // 1. Собираем URL + query
     let fullUrl = options.url;
     if (options.query) {
@@ -37,7 +48,7 @@ export function createClient(config = {}) {
     const mergedHeaders = {
       'Content-Type': 'application/json',
       ...defaultHeaders,
-      ...options.headers,
+      ...currentOptions.headers,
     };
 
     // 3. Готовим тело
@@ -63,24 +74,37 @@ export function createClient(config = {}) {
         timeoutId = setTimeout(() => internalController.abort(), ms);
     }
 
+    let response;
     try {
-      const res = await fetch(fullUrl, {
-        method: options.method || 'GET',
+      response = await fetch(fullUrl, {
+        method: currentOptions.method || 'GET',
         headers: mergedHeaders,
         body,
         signal: effectiveSignal,
       });
 
-      if (!res.ok) {
-        throw new HttpError(res.status, res.statusText, res);
+      // 4. Хук ПОСЛЕ ответа (успешный или с ошибкой)
+      if (afterResponse) {
+        const modified = await afterResponse(response, currentOptions);
+        if (modified) {
+          response = modified; // можно вернуть другой Response или даже данные
+        }
       }
 
-      const contentType = res.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        return await res.json();
+      if (!response.ok) {
+        throw new HttpError(response.status, response.statusText, response);
       }
-      return await res.text();
+
+      const contentType = response.headers.get('content-type') || '';
+      if (contentType.includes('application/json')) {
+        return await response.json();
+      }
+      return await response.text();
     } catch (err) {
+      if (afterResponse) {
+        await afterResponse(null, currentOptions, err).catch(() => {}); // не ломать цепочку
+      }
+
       if (err instanceof HttpError) {
         throw err;  
       }
