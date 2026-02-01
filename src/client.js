@@ -51,12 +51,16 @@ export function createClient(config = {}) {
     }
 
     // 4. Таймаут
-    const controller = new AbortController();
+    const signal = options.signal;
+
+    const internalController = new AbortController();
+    const effectiveSignal = signal || internalController.signal;
+
     let timeoutId;
 
     const ms = options.timeout ?? timeout ?? 0; // 0 = без таймаута
-    if (ms > 0) {
-        timeoutId = setTimeout(() => controller.abort(), ms);
+    if (ms > 0 && !signal) {
+        timeoutId = setTimeout(() => internalController.abort(), ms);
     }
 
     try {
@@ -64,7 +68,7 @@ export function createClient(config = {}) {
         method: options.method || 'GET',
         headers: mergedHeaders,
         body,
-        signal: controller.signal,
+        signal: effectiveSignal,
       });
 
       if (!res.ok) {
@@ -82,11 +86,10 @@ export function createClient(config = {}) {
       }
       
       if (err.name === 'AbortError') {
-        const isTimeout = !!timeoutId; // если был таймер → считаем таймаутом
-        const error = new HttpError(0, 'Aborted', null, isTimeout ? 'Request timeout' : 'Request aborted');
-        error.isAbort = true;
-        error.isTimeout = isTimeout;
-        throw error;
+        const abortedError = new HttpError(0, 'Aborted', null, 'Request aborted');
+        abortedError.isAbort = true;
+        abortedError.isTimeout = !signal && !!timeoutId; // таймаут только если наш внутренний
+        throw abortedError;
       }
 
       // другие сетевые ошибки
