@@ -25,105 +25,149 @@ export function createClient(config = {}) {
     return queryString ? `${url}?${queryString}` : url;
   }
 
-  async function request(options) {
-    // 1. Копируем опции, чтобы не менять оригинал
-    let currentOptions = { ...options };
-
-    // 2. Хук ДО запроса
-    if (beforeRequest) {
-      currentOptions = await beforeRequest(currentOptions) || currentOptions;
-      // можно вернуть новые опции или ничего (тогда берём как есть)
-    }
-
-    // 1. Собираем URL + query
-    let fullUrl = options.url;
-    if (options.query) {
-      fullUrl = buildUrl(fullUrl, options.query);
-    }
-    if (!fullUrl.startsWith('http')) {
-      fullUrl = baseURL + (fullUrl.startsWith('/') ? '' : '/') + fullUrl;
-    }
-
-    // 2. Объединяем заголовки
-    const mergedHeaders = {
-      'Content-Type': 'application/json',
-      ...defaultHeaders,
-      ...currentOptions.headers,
-    };
-
-    // 3. Готовим тело
-    let body = undefined;
-    if (options.body !== undefined) {
-      if (mergedHeaders['Content-Type'] === 'application/json') {
-        body = JSON.stringify(options.body);
-      } else {
-        body = options.body; // FormData, строка, Blob и т.д.
-      }
-    }
-
-    // 4. Таймаут
-    const signal = options.signal;
-
-    const internalController = new AbortController();
-    const effectiveSignal = signal || internalController.signal;
-
-    let timeoutId;
-
-    const ms = options.timeout ?? timeout ?? 0; // 0 = без таймаута
-    if (ms > 0 && !signal) {
-        timeoutId = setTimeout(() => internalController.abort(), ms);
-    }
-
-    let response;
-    try {
-      response = await fetch(fullUrl, {
-        method: currentOptions.method || 'GET',
-        headers: mergedHeaders,
-        body,
-        signal: effectiveSignal,
-      });
-
-      // 4. Хук ПОСЛЕ ответа (успешный или с ошибкой)
-      if (afterResponse) {
-        const modified = await afterResponse(response, currentOptions);
-        if (modified) {
-          response = modified; // можно вернуть другой Response или даже данные
+    // Вспомогательная функция для нормализации ошибок
+    function normalizeError(err, signal, timeoutId) {
+        if (err instanceof HttpError) {
+            return err;
         }
-      }
 
-      if (!response.ok) {
-        throw new HttpError(response.status, response.statusText, response);
-      }
+        if (err.name === 'AbortError') {
+            const error = new HttpError(0, 'Aborted', null, 'Request aborted');
+            error.isAbort = true;
+            error.isTimeout = !signal && !!timeoutId;
+            return error;
+        }
 
-      const contentType = response.headers.get('content-type') || '';
-      if (contentType.includes('application/json')) {
-        return await response.json();
-      }
-      return await response.text();
-    } catch (err) {
-      if (afterResponse) {
-        await afterResponse(null, currentOptions, err).catch(() => {}); // не ломать цепочку
-      }
-
-      if (err instanceof HttpError) {
-        throw err;  
-      }
-      
-      if (err.name === 'AbortError') {
-        const abortedError = new HttpError(0, 'Aborted', null, 'Request aborted');
-        abortedError.isAbort = true;
-        abortedError.isTimeout = !signal && !!timeoutId; // таймаут только если наш внутренний
-        throw abortedError;
-      }
-
-      // другие сетевые ошибки
-      const netError = new HttpError(0, 'Network Error', null, err.message);
-      netError.isNetwork = true;
-      throw netError;
-    } finally {
-      if (timeoutId) clearTimeout(timeoutId);
+        const error = new HttpError(0, 'Network Error', null, err.message || 'Network failure');
+        error.isNetwork = true;
+        return error;
     }
-  }
+
+    async function request(options) {
+        // Копируем опции, чтобы не менять оригинал
+        let currentOptions = {
+            ...options
+        };
+
+        // Хук ДО запроса
+        if (beforeRequest) {
+            currentOptions = (await beforeRequest(currentOptions)) || currentOptions;
+        }
+
+        // Настройки повторов (по умолчанию — без повторов)
+        const retry = currentOptions.retry ?? {};
+        const maxAttempts = retry.maxAttempts ?? 1; // 1 = без повторов
+        const baseDelayMs = retry.baseDelayMs ?? 1000;
+        const maxDelayMs = retry.maxDelayMs ?? 10000;
+        const backoffFactor = retry.backoffFactor ?? 2;
+
+        // Определяем, стоит ли вообще включать механизм повторов
+        const shouldEnableRetry = maxAttempts > 1;
+
+        let attempt = 1;
+        let lastError;
+
+        while (true) {
+            // 1. Собираем URL + query
+            let fullUrl = currentOptions.url;
+            if (currentOptions.query) {
+                fullUrl = buildUrl(fullUrl, currentOptions.query);
+            }
+            if (!fullUrl.startsWith('http')) {
+                fullUrl = baseURL + (fullUrl.startsWith('/') ? '' : '/') + fullUrl;
+            }
+
+            // 2. Объединяем заголовки
+            const mergedHeaders = {
+                'Content-Type': 'application/json',
+                ...defaultHeaders,
+                ...currentOptions.headers,
+            };
+
+            // 3. Готовим тело
+            let body = undefined;
+            if (currentOptions.body !== undefined) {
+                if (mergedHeaders['Content-Type'] === 'application/json') {
+                    body = JSON.stringify(currentOptions.body);
+                } else {
+                    body = currentOptions.body;
+                }
+            }
+
+            // 4. Таймаут и сигнал отмены
+            const signal = currentOptions.signal;
+            const internalController = new AbortController();
+            const effectiveSignal = signal || internalController.signal;
+
+            let timeoutId;
+            const ms = currentOptions.timeout ?? timeout ?? 0;
+            if (ms > 0 && !signal) {
+                timeoutId = setTimeout(() => internalController.abort(), ms);
+            }
+
+            let response;
+
+            try {
+                response = await fetch(fullUrl, {
+                    method: currentOptions.method || 'GET',
+                    headers: mergedHeaders,
+                    body,
+                    signal: effectiveSignal,
+                });
+
+                // Хук ПОСЛЕ ответа
+                if (afterResponse) {
+                    const modified = await afterResponse(response, currentOptions);
+                    if (modified) response = modified;
+                }
+
+                if (!response.ok) {
+                    throw new HttpError(response.status, response.statusText, response);
+                }
+
+                const contentType = response.headers.get('content-type') || '';
+                if (contentType.includes('application/json')) {
+                    return await response.json();
+                }
+                return await response.text();
+            } catch (err) {
+                lastError = err;
+
+                if (afterResponse) {
+                    await afterResponse(null, currentOptions, err).catch(() => {});
+                }
+
+                // Нормализуем ошибку
+                const normalizedError = normalizeError(err, signal, timeoutId);
+
+                // Определяем, можно ли повторить запрос
+                const isRetryable =
+                    normalizedError.isTimeout ||
+                    normalizedError.isNetwork ||
+                    (normalizedError.status >= 500 && normalizedError.status < 600) ||
+                    normalizedError.status === 429;
+
+                const isLastAttempt = attempt >= maxAttempts;
+
+                if (!shouldEnableRetry || !isRetryable || isLastAttempt) {
+                    throw normalizedError;
+                }
+
+                // Задержка перед следующей попыткой
+                const delay = Math.min(
+                    baseDelayMs * Math.pow(backoffFactor, attempt - 1),
+                    maxDelayMs
+                );
+
+                await new Promise(resolve => setTimeout(resolve, delay));
+
+                attempt++;
+                // продолжаем цикл → новая попытка
+            } finally {
+                if (timeoutId) clearTimeout(timeoutId);
+            }
+        }
+    }
 
   return {
     request,

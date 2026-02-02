@@ -4,29 +4,29 @@ const api = createClient({
   baseURL: 'https://httpbin.org',
   headers: {  },
   timeout: 3000,
-  beforeRequest: (options) => {
-        const token = 'token';
-        if (token) {
-            options.headers = {
-                ...options.headers,
-                Authorization: `Bearer ${token}`,
-            };
-        }
+//   beforeRequest: (options) => {
+//         const token = 'token';
+//         if (token) {
+//             options.headers = {
+//                 ...options.headers,
+//                 Authorization: `Bearer ${token}`,
+//             };
+//         }
 
-        options._startTime = Date.now();
+//         options._startTime = Date.now();
 
-        return options;
-    },
-    afterResponse: async (response, options) => {
-        const duration = Date.now() - options._startTime;
-        const method = (options.method || 'GET').toUpperCase();
-        const url = options.url;
-        const status = response?.status || '—';
+//         return options;
+//     },
+//     afterResponse: async (response, options) => {
+//         const duration = Date.now() - options._startTime;
+//         const method = (options.method || 'GET').toUpperCase();
+//         const url = options.url;
+//         const status = response?.status || '—';
 
-        console.log(`[${method}] ${url} — ${status} (${duration} мс)`);
+//         console.log(`[${method}] ${url} — ${status} (${duration} мс)`);
 
-        return response;
-    },
+//         return response;
+//     },
 });
 
 // api.get('/comments', {query: {postId: 1}})
@@ -45,7 +45,18 @@ const api = createClient({
 
 // setTimeout(() => {myController.abort()}, 2000);
 
-api.get('/bearer')
+// api.get('/bearer')
+//     .then(data => console.log(data))
+//     .catch(handleError);
+
+api.post('/post', {
+  retry: {
+    maxAttempts: 4,
+    baseDelayMs: 800,
+    maxDelayMs: 15000,
+    backoffFactor: 2.5
+  }
+})
     .then(data => console.log(data))
     .catch(handleError);
 
