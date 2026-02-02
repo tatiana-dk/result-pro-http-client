@@ -1,13 +1,22 @@
 {
   "name": "result-pro-http-client",
   "version": "1.0.0",
-  "main": "index.js",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
   "type": "module",
   "directories": {
     "example": "examples"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "size": "dir dist"
   },
   "repository": {
     "type": "git",
@@ -16,5 +25,8 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": ""
+  "description": "",
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
 }
