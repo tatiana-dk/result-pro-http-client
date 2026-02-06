@@ -3,6 +3,11 @@ import { defineConfig } from 'tsup'
 export default defineConfig({
   entry: ['src/index.js'],          // или src/client.js если без TS
   format: ['cjs', 'esm'],                      // генерирует .d.ts
+  outExtension({ format }) {
+    return {
+      js: format === 'esm' ? '.mjs' : '.cjs',
+    }
+  },
   clean: true,                      // очищает dist перед сборкой
   sourcemap: true,
   minify: false,                    // для библиотеки обычно не минифицируют
