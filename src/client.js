@@ -7,9 +7,13 @@ export function createClient(config = {}) {
     baseURL = '',
     headers: defaultHeaders = {},
     timeout,
+    cacheTTL = 0,
     beforeRequest,
     afterResponse
   } = config;
+
+  // Кэш: Map<url, { data, timestamp }>
+  const cache = new Map();
 
   // Вспомогательная функция: добавляет query-параметры к URL
   function buildUrl(url, query = {}) {
@@ -77,6 +81,23 @@ export function createClient(config = {}) {
                 fullUrl = baseURL + (fullUrl.startsWith('/') ? '' : '/') + fullUrl;
             }
 
+            const isGetRequest = (currentOptions.method || 'GET') === 'GET';
+            const canUseCache = isGetRequest && cacheTTL > 0;
+
+            if (canUseCache) {
+                const cached = cache.get(fullUrl);
+                if (cached) {
+                    const age = Date.now() - cached.timestamp;
+                    if (age < cacheTTL) {
+                        console.debug(`[cache hit] ${fullUrl} (age: ${age}ms)`);
+                        return cached.data;
+                    } else {
+                        console.debug(`[cache expired] ${fullUrl}`);
+                        cache.delete(fullUrl);
+                    }
+                }
+            }
+
             // 2. Объединяем заголовки
             const mergedHeaders = {
                 'Content-Type': 'application/json',
@@ -128,8 +149,19 @@ export function createClient(config = {}) {
                 const contentType = response.headers.get('content-type') || '';
                 if (contentType.includes('application/json')) {
                     return await response.json();
+                } else {
+                    data = await response.text();
                 }
-                return await response.text();
+
+                if (canUseCache) {
+                    cache.set(fullUrl, {
+                        data,
+                        timestamp: Date.now(),
+                    });
+                    console.debug(`[cache saved] ${fullUrl}`);
+                }
+
+                return data;
             } catch (err) {
                 lastError = err;
 
