@@ -113,6 +113,35 @@ await api.get('/unstable-api', {
 })
 ```
 
+### Кэширование GET запросов
+
+```javascript
+const api = createClient({
+  baseURL: 'https://api.example.com',
+  cacheTTL: 30 * 1000
+})
+```
+
+### Progress для upload
+
+```javascript
+await api.post('/upload', formData, {
+  onUploadProgress: ({ percent, loaded, total }) => {
+    console.log(`Загрузка: ${percent}% (${loaded} / ${total} байт)`);
+  }
+})
+```
+
+### Progress для download
+
+```javascript
+await api.get('/large-file.zip', {
+  onDownloadProgress: ({ loaded, total, percent, estimatedTotal }) => {
+    console.log(`Скачано: ${formatBytes(loaded)} / ${total ? formatBytes(total) : 'неизвестно'}`);
+  }
+})
+```
+
 ### Размер и преимущества
 
 - ~3.2 КБ (minified + gzipped) — почти в 10 раз легче axios
