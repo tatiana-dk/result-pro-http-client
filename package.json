@@ -1,0 +1,32 @@
+{
+  "name": "quickrequest",
+  "version": "1.0.0",
+  "main": "dist/index.cjs",
+  "module": "dist/index.mjs",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "type": "module",
+  "directories": {
+    "example": "examples"
+  },
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "size": "dir dist"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:tatiana-dk/result-pro-http-client.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "tsup": "^8.5.1"
+  }
+}
