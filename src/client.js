@@ -1,6 +1,5 @@
 import {
     HttpError,
-    buildUrl,
     normalizeError,
     mergeHeaders,
     prepareBody,

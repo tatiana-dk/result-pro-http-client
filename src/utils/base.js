@@ -12,7 +12,7 @@ export class HttpError extends Error {
 }
 
 // Вспомогательная функция: добавляет query-параметры к URL
-export function buildUrl(url, query = {}) {
+function buildUrl(url, query = {}) {
   if (!query || Object.keys(query).length === 0) return url;
 
   const params = new URLSearchParams();
