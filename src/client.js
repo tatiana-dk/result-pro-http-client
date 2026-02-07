@@ -247,7 +247,7 @@ export function createClient(config = {}) {
         }
     }
 
-    async function request(options) {
+    async function request(options) {        
         let currentOptions = { ...options };
 
         if (beforeRequest) {
