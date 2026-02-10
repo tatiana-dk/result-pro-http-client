@@ -19,12 +19,13 @@
 
 ### Установка
 
-```bash
-npm install quickrequest
-# или
-yarn add quickrequest
-# или
-pnpm add quickrequest
+package.json
+
+```javascript
+"dependencies": {
+  "quickrequest": "git@github.com:tatiana-dk/result-pro-http-client.git"
+}
+
 ```
 
 ### Базовое использование
